@@ -1,0 +1,11 @@
+{
+  "domain": "elering_hourly_pricing",
+  "name": "Electricity hourly pricing (Elering)",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/elering-prices",
+  "requirements": [],
+  "codeowners": ["@EE"],
+  "quality_scale": "silver",
+  "iot_class": "cloud_polling",
+  "version": "0.0.0"
+}

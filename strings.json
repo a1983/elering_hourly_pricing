@@ -1,0 +1,26 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sensor setup",
+        "description": "This sensor uses official API to get [hourly pricing of electricity (Elering)](https://dashboard.elering.ee/assets/api-doc.html#/nps-controller/getPriceUsingGET).\nFor more precise explanation visit the [integration docs](https://www.home-assistant.io/integrations/elering_hourly_pricing/).",
+        "data": {
+          "name": "Sensor Name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_service%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Sensor setup",
+        "description": "This sensor uses official API to get [hourly pricing of electricity (Elering)](https://dashboard.elering.ee/assets/api-doc.html#/nps-controller/getPriceUsingGET).\nFor more precise explanation visit the [integration docs](https://www.home-assistant.io/integrations/elering_hourly_pricing/).",
+        "data": {
+        }
+      }
+    }
+  }
+}
