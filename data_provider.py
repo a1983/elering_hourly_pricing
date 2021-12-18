@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 import aiohttp
 import async_timeout
 
-from .const import DEFAULT_TIMEOUT, REFERENCE_TZ, URL_EE_RESOURCE, UTC_TZ, zoneinfo
+from .const import DEFAULT_TIMEOUT, URL_EE_RESOURCE, UTC_TZ, zoneinfo
 from .prices import make_price_sensor_attributes
 
 # Use randomized standard User-Agent info to avoid server banning
@@ -54,14 +54,14 @@ def ensure_utc_time(ts: datetime) -> datetime:
 
 def extract_data(
     data: Dict[str, Any],
-    tz: zoneinfo.ZoneInfo = REFERENCE_TZ,
+    tz: zoneinfo.ZoneInfo = UTC_TZ,
 ) -> Dict[datetime, float]:
     """Parse the contents of a daily json file."""
     result: Dict[datetime, float] = {}
     for day_price in data["data"]["ee"]:
         timestamp = day_price["timestamp"]
-        date_time = datetime.fromtimestamp(timestamp).astimezone(UTC_TZ)
-        price = round(day_price["price"] / 1000, 2)
+        date_time = datetime.fromtimestamp(timestamp).astimezone(tz)
+        price = round(day_price["price"] / 1000, 3)
         result[date_time] = price
 
     return result
@@ -82,7 +82,7 @@ class EEData:
     def __init__(
         self,
         websession: Optional[aiohttp.ClientSession] = None,
-        local_timezone: Union[str, zoneinfo.ZoneInfo] = REFERENCE_TZ,
+        local_timezone: Union[str, zoneinfo.ZoneInfo] = UTC_TZ,
         timeout: float = DEFAULT_TIMEOUT,
     ):
         """Elering EEData init."""
@@ -138,9 +138,10 @@ class EEData:
 
         Prices are referenced with datetimes in UTC.
         """
-        start = day
-        end = datetime.combine(start, time(0, 0, 0)) + timedelta(23, 0, 0)
-        url = URL_EE_RESOURCE.format(start, end)
+        local_start = datetime.combine(day, time(0, 0, 0, tzinfo=self._local_timezone))
+        utc_start = local_start.astimezone(UTC_TZ)
+        utc_end = utc_start + timedelta(hours=23)
+        url = URL_EE_RESOURCE.format(utc_start, utc_end)
 
         try:
             async with async_timeout.timeout(2 * self.timeout):
@@ -164,7 +165,7 @@ class EEData:
         or set as UTC-time if it is a naive datetime.
         """
         utc_now = ensure_utc_time(now)
-        local_ref_now = utc_now.astimezone(REFERENCE_TZ)
+        local_ref_now = utc_now.astimezone(self._local_timezone)
         current_num_prices = len(self._current_prices)
         if local_ref_now.hour >= 20 and current_num_prices > 30:
             # already have today+tomorrow prices, avoid requests
@@ -178,7 +179,7 @@ class EEData:
             local_ref_now.hour < 20
             and current_num_prices > 20
             and (
-                list(self._current_prices)[-12].astimezone(REFERENCE_TZ).date()
+                list(self._current_prices)[-12].astimezone(self._local_timezone).date()
                 == local_ref_now.date()
             )
         ):
@@ -191,7 +192,7 @@ class EEData:
             return self._current_prices
 
         if current_num_prices and (
-            list(self._current_prices)[0].astimezone(REFERENCE_TZ).date()
+            list(self._current_prices)[0].astimezone(self._local_timezone).date()
             == local_ref_now.date()
         ):
             # avoid download of today prices
@@ -200,7 +201,7 @@ class EEData:
                 "Avoided: %s, with %d prices -> last: %s, download-day: %s",
                 local_ref_now,
                 current_num_prices,
-                list(self._current_prices)[0].astimezone(REFERENCE_TZ).date(),
+                list(self._current_prices)[0].astimezone(self._local_timezone).date(),
                 local_ref_now.date(),
             )
         else:
@@ -222,7 +223,7 @@ class EEData:
                 return prices
 
         # At evening, it is possible to retrieve next day prices
-        if local_ref_now.hour >= 20:
+        if local_ref_now.hour >= 18:
             next_day = (local_ref_now + timedelta(days=1)).date()
             prices_fut = await self._download_prices(next_day)
             if prices_fut:
@@ -251,13 +252,11 @@ class EEData:
         attributes: Dict[str, Any] = {}
 
         utc_time = ensure_utc_time(utc_now.replace(minute=0, second=0, microsecond=0))
-        actual_time = utc_time.astimezone(self._local_timezone)
+        local_time = utc_time.astimezone(self._local_timezone)
 
-        if len(self._current_prices) > 25 and actual_time.hour < 20:
+        if len(self._current_prices) > 25 and local_time.hour < 20:
             # there are 'today' and 'next day' prices, but 'today' has expired
-            max_age = (
-                utc_time.astimezone(REFERENCE_TZ).replace(hour=0).astimezone(UTC_TZ)
-            )
+            max_age = local_time.replace(hour=0).astimezone(UTC_TZ)
             self._current_prices = {
                 key_ts: price
                 for key_ts, price in self._current_prices.items()
@@ -266,7 +265,7 @@ class EEData:
 
         # set current price
         try:
-            self.state = self._current_prices[utc_time]
+            self.state = self._current_prices[local_time]
             self.state_available = True
         except KeyError:
             self.state_available = False
@@ -347,9 +346,7 @@ class EEData:
         def _adjust_dates(ts: datetime) -> Tuple[datetime, datetime]:
             # adjust dates and tz from inputs to retrieve prices as it was in
             #  Spain mainland, so tz-independent!!
-            ts_ref = datetime(
-                *ts.timetuple()[:6], tzinfo=self._local_timezone
-            ).astimezone(REFERENCE_TZ)
+            ts_ref = datetime(*ts.timetuple()[:6], tzinfo=self._local_timezone)
             ts_utc = ts_ref.astimezone(UTC_TZ)
             return ts_utc, ts_ref
 
